@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipwatch"
+version = "1.0.0"
+description = "Utility to log and check your public IP address"
+authors = [
+    { name = "Stavis-dev", email = "stavis.vega@gmail.com" }
+]
+readme = "README.md"
+license = { text = "GPL" }
+requires-python = ">=3.7"
+
+[project.scripts]
+ipwatch = "ipwatch:main"
+
+[tool.setuptools]
+py-modules = ["ipwatch"]

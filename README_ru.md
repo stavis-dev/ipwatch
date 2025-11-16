@@ -31,7 +31,7 @@
 ### 🔹 Установка через `pip` (рекомендуется)
 
 ```bash
-pip install git+https://github.com/yourusername/ipwatch.git
+pip install git+https://github.com/stavis-dev/ipwatch.git
 ```
 
 или если у тебя локальная папка:
@@ -56,7 +56,7 @@ ipwatch -c "тест"
 Если ты **не хочешь устанавливать**, можно скачать файл и запустить напрямую:
 
 ```bash
-curl -O https://raw.githubusercontent.com/yourusername/ipwatch/main/ipwatch.py
+curl -O https://raw.githubusercontent.com/stavis-dev/ipwatch/main/ipwatch.py
 python ipwatch.py -c "тест"
 ```
 

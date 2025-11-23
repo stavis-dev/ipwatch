@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ipwatch"
-version = "1.0.0"
+version = "1.0.1"
 description = "Utility to log and check your public IP address"
 authors = [
     { name = "Stavis-dev", email = "stavis.vega@gmail.com" }

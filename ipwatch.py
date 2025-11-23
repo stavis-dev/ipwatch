@@ -4,13 +4,13 @@ import json
 import urllib.request
 import urllib.error
 from datetime import datetime
-from abc import ABC, abstractmethod
 import csv
 import os
 import argparse
 import sys
-from typing import Dict, Any, List, NamedTuple
+from typing import List, NamedTuple
 import platform
+
 
 class IPRecord(NamedTuple):
     timestamp: str
@@ -19,71 +19,37 @@ class IPRecord(NamedTuple):
     comment: str
 
 
-class DataProvider(ABC):
-    @abstractmethod
-    def fetch_data(self) -> Dict[str, Any]:
-        pass
+def get_log_path():
+    LOG_FILENAME = "ipwatch_log.csv"
 
-
-class IPAPIProvider(DataProvider):
-    def __init__(self, url: str = "http://ip-api.com/json/?fields=query,isp"):
-        self.url = url
-
-    def fetch_data(self) -> Dict[str, Any]:
-        with urllib.request.urlopen(self.url, timeout=10) as response:
-            return json.loads(response.read().decode())
-
-
-class DataFormatter(ABC):
-    @abstractmethod
-    def format(self, data: Dict[str, Any], comment: str = "") -> IPRecord:
-        pass
-
-
-class IPDataFormatter(DataFormatter):
-    def format(self, data: Dict[str, Any], comment: str = "") -> IPRecord:
-        return IPRecord(
-            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            ip=data.get("query", "N/A"),
-            isp=data.get("isp", "N/A"),
-            comment=comment or "N/A"
-        )
-
-
-class DataStorage(ABC):
-    @abstractmethod
-    def save(self, record: IPRecord) -> None:
-        pass
-
-    @abstractmethod
-    def read_all_rows(self) -> List[List[str]]:
-        pass
-
-    @abstractmethod
-    def find_records_by_ip(self, ip: str) -> List[IPRecord]:
-        pass
-
-
-def get_documents_path():
-    system = platform.system()
-    if system == "Windows":
+    # Попытка 1: Windows — через реестр
+    if platform.system() == "Windows":
         try:
             import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders") as key:
-                documents_dir, _ = winreg.QueryValueEx(key, "Personal")
-                return documents_dir
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                docs_dir, _ = winreg.QueryValueEx(key, "Personal")
+                if os.path.isdir(docs_dir):
+                    return os.path.join(docs_dir, LOG_FILENAME)
         except Exception:
             pass
-    # fallback для Linux/macOS
+    
     home = os.path.expanduser("~")
-    return os.path.join(home, "Documents")
+    # Попытка 2: ~/Documents (актуально для десктопов)
+    docs_path = os.path.join(home, "Documents")
+    if os.path.isdir(docs_path):
+        return os.path.join(docs_path, LOG_FILENAME)
+
+    # Попытка 3: fallback в ~/.ipwatch/
+    fallback_dir = os.path.join(home, ".ipwatch")
+    os.makedirs(fallback_dir, exist_ok=True)
+    return os.path.join(fallback_dir, LOG_FILENAME)
 
 
-class CSVDataStorage(DataStorage):
-    def __init__(self, filename: str = None):
-        if filename is None:
-            filename = os.path.join(get_documents_path(), "ipwatch_log.csv")
-        self.filename = filename
+class CSVStorage:
+    def __init__(self):
+        self.filename = get_log_path()
+        os.makedirs(os.path.dirname(self.filename), exist_ok=True)
         self._ensure_file_exists()
 
     def _ensure_file_exists(self) -> None:
@@ -107,34 +73,16 @@ class CSVDataStorage(DataStorage):
             print(f"Error reading file: {e}", file=sys.stderr)
         return rows
 
-    def find_records_by_ip(self, ip: str) -> List[IPRecord]:
-        rows = self.read_all_rows()
-        return [
-            IPRecord(row[0], row[1], row[2], row[3])
-            for row in rows if row[1] == ip
-        ]
-
     def save(self, record: IPRecord) -> None:
         with open(self.filename, "a", newline="") as f:
             writer = csv.writer(f, delimiter="\t")
             writer.writerow([record.timestamp, record.ip, record.isp, record.comment])
 
 
-class DataPresenter(ABC):
-    @abstractmethod
-    def display(self, record: IPRecord) -> None:
-        pass
+class TablePresenter:
+    def _make_headers(self) -> List[str]:
+        return ["Timestamp", "IP Address", "ISP", "Comment"]
 
-    @abstractmethod
-    def display_match_found(self, records: List[IPRecord]) -> None:
-        pass
-
-    @abstractmethod
-    def display_no_match(self) -> None:
-        pass
-
-
-class TableDataPresenter(DataPresenter):
     def _print_table(self, headers: List[str], rows: List[List[str]]) -> None:
         if not rows:
             return
@@ -152,15 +100,13 @@ class TableDataPresenter(DataPresenter):
             print(format_str.format(*row), file=sys.stderr)
         print(separator, file=sys.stderr)
 
-    def display(self, record: IPRecord) -> None:
-        headers = ["Timestamp", "IP Address", "ISP", "Comment"]
+    def display_current(self, record: IPRecord) -> None:
+        headers = self._make_headers()
         rows = [[record.timestamp, record.ip, record.isp, record.comment]]
         self._print_table(headers, rows)
 
-    def display_match_found(self, records: List[IPRecord]) -> None:
-        if not records:
-            return
-        headers = ["Timestamp", "IP Address", "ISP", "Comment"]
+    def display_matches(self, records: List[IPRecord]) -> None:
+        headers = self._make_headers()
         rows = [[r.timestamp, r.ip, r.isp, r.comment] for r in records]
         print("\n ⚠️\t IP matches found:", file=sys.stderr)
         self._print_table(headers, rows)
@@ -168,78 +114,116 @@ class TableDataPresenter(DataPresenter):
     def display_no_match(self) -> None:
         print("\n ✅\t No IP matches", file=sys.stderr)
 
+    def display_list(self, rows: List[List[str]]) -> None:
+        if not rows:
+            print("No IP records found.", file=sys.stderr)
+            return
+        headers = self._make_headers()
+        self._print_table(headers, rows)
 
-class IPInfoService:
-    def __init__(
-        self,
-        provider: DataProvider,
-        formatter: DataFormatter,
-        storage: DataStorage,
-        presenter: DataPresenter,
-    ):
-        self.provider = provider
-        self.formatter = formatter
-        self.storage = storage
-        self.presenter = presenter
 
-    def run(self, comment: str = "") -> bool:
-        """
-        Returns:
-            True if IP is NEW (exit code 0),
-            False if IP was seen before (exit code 1).
-        """
-        try:
-            raw_data = self.provider.fetch_data()
-            record = self.formatter.format(raw_data, comment=comment)
-            current_ip = record.ip
+def fetch_ip_from_api() -> dict:
+    url = "http://ip-api.com/json/?fields=query,isp"
+    with urllib.request.urlopen(url, timeout=10) as response:
+        return json.loads(response.read().decode())
 
-            all_rows = self.storage.read_all_rows()
-            existing_ips = {row[1] for row in all_rows}
 
-            has_match = current_ip in existing_ips
-
-            self.presenter.display(record)
-
-            if has_match:
-                matches = self.storage.find_records_by_ip(current_ip)
-                self.presenter.display_match_found(matches)
-            else:
-                self.presenter.display_no_match()
-
-            self.storage.save(record)
-
-            return not has_match  # True = new IP
-
-        except urllib.error.URLError as e:
-            print(f"Network error: unable to reach IP provider ({e})", file=sys.stderr)
-        except json.JSONDecodeError as e:
-            print(f"Invalid response from IP provider: {e}", file=sys.stderr)
-        except Exception as e:
-            print(f"Unexpected error: {e}", file=sys.stderr)
-
-        # В случае ошибки — считаем, что IP не проверен → не новый
-        return False
+def format_record(data: dict, comment: str = "") -> IPRecord:
+    return IPRecord(
+        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        ip=data.get("query", "N/A"),
+        isp=data.get("isp", "N/A"),
+        comment=comment or "N/A"
+    )
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Watch and log your public IP. Exit code: 0 = new IP, 1 = repeated IP.")
+    examples = """
+examples:
+  ipwatch                              # only display current IP (no save)
+  ipwatch -s                           # save IP without comment
+  ipwatch -c "connected to cafe Wi-Fi" # save IP with comment
+  ipwatch -l                           # list all logged IPs
+  LOG=$(ipwatch --show-log-path)       # get log file path for scripts
+  ipwatch --show-log-path              # show log path and exit
+"""
+    parser = argparse.ArgumentParser(
+        description="Watch your public IP and optionally log it with a comment.",
+        epilog=examples,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "-c", "--comment",
         type=str,
-        default="",
-        help="Optional comment to attach to this log entry"
+        default=None,
+        help="Save current IP with a comment"
     )
+    parser.add_argument(
+        "-s", "--save",
+        action="store_true",
+        help="Save current IP without comment"
+    )
+    parser.add_argument(
+        "-l", "--list",
+        action="store_true",
+        help="Display all logged IP records"
+    )
+    parser.add_argument(
+        "--show-log-path",
+        action="store_true",
+        help="Show the path to the log file and exit"
+)
     args = parser.parse_args()
 
-    service = IPInfoService(
-        provider=IPAPIProvider(),
-        formatter=IPDataFormatter(),
-        storage=CSVDataStorage(),
-        presenter=TableDataPresenter(),
-    )
+    storage = CSVStorage()
+    if args.show_log_path:
+        print(storage.filename)
+        sys.exit(0)
 
-    is_new = service.run(comment=args.comment)
-    sys.exit(0 if is_new else 1)
+    presenter = TablePresenter()
+    if args.list:
+        all_rows = storage.read_all_rows()
+        presenter.display_list(all_rows)
+        sys.exit(0)
+
+    # Определяем, нужно ли сохранять
+    should_save = args.comment is not None or args.save
+    comment = args.comment if args.comment is not None else ""
+
+    try:
+        raw_data = fetch_ip_from_api()
+        record = format_record(raw_data, comment)
+        current_ip = record.ip
+
+        all_rows = storage.read_all_rows()
+        existing_ips = {row[1] for row in all_rows}
+        is_new = current_ip not in existing_ips
+
+        presenter.display_current(record)
+
+        if not is_new:
+            matches = [
+                IPRecord(row[0], row[1], row[2], row[3])
+                for row in all_rows if row[1] == current_ip
+            ]
+            presenter.display_matches(matches)
+        else:
+            presenter.display_no_match()
+
+        if should_save:
+            storage.save(record)
+            print("✅ IP saved to log.", file=sys.stderr)
+
+        sys.exit(0 if is_new else 1)
+
+    except urllib.error.URLError as e:
+        print(f"Network error: unable to reach IP provider ({e})", file=sys.stderr)
+    except json.JSONDecodeError as e:
+        print(f"Invalid response from IP provider: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+
+    sys.exit(1)
 
 
 if __name__ == "__main__":

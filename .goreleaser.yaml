@@ -18,6 +18,7 @@ builds:
 
 # В каком виде упаковать файлы (zip для Windows, tar.gz для Linux/macOS)
 archives:
-  - format_overrides:
-      - goos: windows
-        format: zip
+  - formats:
+      windows: zip
+      linux: tar.gz
+      darwin: tar.gz

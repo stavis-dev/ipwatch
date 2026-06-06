@@ -15,8 +15,8 @@ builds:
 
 # ИСПРАВЛЕННЫЙ БЛОК ARCHIVES
 archives:
-  - format: tar.gz
+  - formats: ["tar.gz"]
     # Накатываем исключение: для Windows упаковываем в .zip вместо .tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ["zip"]

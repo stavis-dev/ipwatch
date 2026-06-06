@@ -1,9 +1,8 @@
 version: 2
 
-# Настройки компиляции
 builds:
   - env:
-      - CGO_ENABLED=0 # Отключаем CGO для максимальной переносимости бинарников
+      - CGO_ENABLED=0
     goos:
       - linux
       - windows
@@ -11,14 +10,13 @@ builds:
     goarch:
       - amd64
       - arm64
-    # Передаем те самые флаги оптимизации, о которых шла речь в BUILDING.md, 
-    # чтобы файлы весили на 40% меньше
     ldflags:
       - -s -w
 
-# В каком виде упаковать файлы (zip для Windows, tar.gz для Linux/macOS)
+# ИСПРАВЛЕННЫЙ БЛОК ARCHIVES
 archives:
-  - formats:
-      windows: zip
-      linux: tar.gz
-      darwin: tar.gz
+  - format: tar.gz
+    # Накатываем исключение: для Windows упаковываем в .zip вместо .tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
